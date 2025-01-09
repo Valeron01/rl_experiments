@@ -10,15 +10,15 @@ from genetic_algorithm import Agent, GA2048Wrapper
 
 
 class QNetwork(nn.Module):
-    def __init__(self, field_size):
+    def __init__(self, field_size=4, d_model=128, n_heads=2, n_layers=5, dim_feedforward=512):
         super().__init__()
 
-        self.input_projection = nn.Linear(1, 128)
-        self.position_encoding = nn.Parameter(torch.randn(1, 16, 128))
+        self.input_projection = nn.Linear(1, d_model)
+        self.position_encoding = nn.Parameter(torch.randn(1, field_size ** 2, d_model))
         self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(128, 2, 512, batch_first=True), num_layers=5
+            nn.TransformerEncoderLayer(d_model, n_heads, dim_feedforward, batch_first=True), num_layers=n_layers
         )
-        self.last = nn.Linear(128, 4)
+        self.last = nn.Linear(d_model, 4)
 
     def forward(self, x):
         assert x.ndim == 3
@@ -64,7 +64,7 @@ class Game2048QWrapper:
 
         # delta_zeros = num_current_zeros - num_new_zeros
 
-        reward = sum(np.square(np.log2(merged_values)))
+        reward = sum(np.power(np.log2(merged_values), 2))
 
         done = False
         if step_result == ActionResult.ACTION_PERFORMED:
@@ -73,18 +73,18 @@ class Game2048QWrapper:
             reward += -5
         else:
             done = True
-            reward += -50
+            reward += -100
 
-        reward /= 10
+        reward /= 100
 
         return reward, done
 
 
 def main():
-    epsilon = 0.9
-    min_epsilon = 0.05
-    epsilon_decrease_epochs = 20_000
-    num_game_steps = 1536
+    max_epsilon = 0.8
+    min_epsilon = 0.0005
+    epsilon_decrease_epochs = 150000
+    num_game_steps = 4096
     gamma = 0.95
     field_size = 4
     num_epochs = 10_000_000
@@ -93,15 +93,29 @@ def main():
     weight_decay = 1e-2
     tau = 0.005
 
-    epsilon_delta = (epsilon - min_epsilon) / epsilon_decrease_epochs
+    model_parameters = {
+        "field_size": field_size,
+        "d_model": 256,
+        "n_heads": 4,
+        "dim_feedforward": 768,
+        "n_layers": 6
+    }
 
-    policy_net = QNetwork(field_size).cuda()
+    policy_net = QNetwork(**model_parameters).cuda()
     optimizer = torch.optim.AdamW(policy_net.parameters(), lr=lr, weight_decay=weight_decay, amsgrad=True)
-    target_net = QNetwork(field_size).cuda()
+    target_net = QNetwork(**model_parameters).cuda()
     target_net.load_state_dict(policy_net.state_dict())
     target_net.requires_grad_(False)
 
+    # loaded_target_net, loaded_policy_net, loaded_optimizer, _ = torch.load("./checkpoint4.pt")
+    # target_net.load_state_dict(loaded_target_net.state_dict())
+    # policy_net.load_state_dict(loaded_policy_net.state_dict())
+    # optimizer.load_state_dict(loaded_optimizer.state_dict())
+    max_value_per_game = []
+    rewards_per_game = []
+    epsilon_history = []
     for epoch in range(num_epochs):
+        epsilon = max(max_epsilon - (epoch / epsilon_decrease_epochs) * (max_epsilon - min_epsilon), min_epsilon)
         game = Game2048QWrapper(field_size)
 
         states = []
@@ -110,11 +124,14 @@ def main():
         next_states = []
         dones = []
 
+        game_reward = 0
         for game_iter in range(num_game_steps):
             game_state = torch.from_numpy(game.game.field.copy())[None]
             prediction = policy_net.forward_epsilon_greedy(game_state.cuda(), epsilon)
             reward, done = game.make_step(prediction)
             next_game_state = torch.from_numpy(game.game.field.copy())[None]
+
+            game_reward += reward
 
             states.append(game_state)
             actions.append(prediction)
@@ -157,10 +174,35 @@ def main():
 
             if done:
                 break
+
+        max_value_per_game.append(game.game.field.max())
+        rewards_per_game.append(game_reward)
+        epsilon_history.append(epsilon)
+        print(game.game.field.max(), game_reward, epsilon, epoch)
         if epoch % 1000 == 0:
-            torch.save([target_net, policy_net, optimizer, epoch], "./checkpoint4.pt")
-        print(game.game.field.max(), epsilon, epoch)
-        epsilon = max(epsilon - epsilon_delta, min_epsilon)
+            torch.save({
+                "target_net": target_net.state_dict(),
+                "policy_net": policy_net.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "epoch": epoch,
+                "model_parameters": model_parameters,
+                "hyper_parameters": {
+                    "max_epsilon": max_epsilon,
+                    "min_epsilon": min_epsilon,
+                    "epsilon_decrease_epochs": epsilon_decrease_epochs,
+                    "num_game_steps": num_game_steps,
+                    "gamma": gamma,
+                    "field_size": field_size,
+                    "num_epochs": num_epochs,
+                    "batch_size": batch_size,
+                    "lr": lr,
+                    "weight_decay": weight_decay,
+                    "tau": tau,
+                },
+                "max_value_per_game": max_value_per_game,
+                "epsilon_history": epsilon_history,
+                "rewards_per_game": rewards_per_game
+            }, "./checkpoint2_1.pt")
 
 
 
