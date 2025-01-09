@@ -81,10 +81,10 @@ class Game2048QWrapper:
 
 
 def main():
-    max_epsilon = 0.8
-    min_epsilon = 0.0005
-    epsilon_decrease_epochs = 150000
-    num_game_steps = 4096
+    max_epsilon = 0.95
+    min_epsilon = 0.03
+    epsilon_decrease_epochs = 75000
+    num_game_steps = 1536
     gamma = 0.95
     field_size = 4
     num_epochs = 10_000_000
@@ -92,6 +92,7 @@ def main():
     lr = 1e-4
     weight_decay = 1e-2
     tau = 0.005
+    start_epoch = 0
 
     model_parameters = {
         "field_size": field_size,
@@ -107,15 +108,25 @@ def main():
     target_net.load_state_dict(policy_net.state_dict())
     target_net.requires_grad_(False)
 
-    # loaded_target_net, loaded_policy_net, loaded_optimizer, _ = torch.load("./checkpoint4.pt")
-    # target_net.load_state_dict(loaded_target_net.state_dict())
-    # policy_net.load_state_dict(loaded_policy_net.state_dict())
-    # optimizer.load_state_dict(loaded_optimizer.state_dict())
     max_value_per_game = []
     rewards_per_game = []
     epsilon_history = []
-    for epoch in range(num_epochs):
-        epsilon = max(max_epsilon - (epoch / epsilon_decrease_epochs) * (max_epsilon - min_epsilon), min_epsilon)
+    fields_per_game = []
+
+    if False:
+        loaded_checkpoint = torch.load("./checkpoint2_1.pt")
+        optimizer.load_state_dict(loaded_checkpoint["optimizer"])
+        target_net.load_state_dict(loaded_checkpoint["target_net"])
+        policy_net.load_state_dict(loaded_checkpoint["policy_net"])
+        start_epoch = loaded_checkpoint["epoch"] + 1
+        max_value_per_game = loaded_checkpoint["max_value_per_game"]
+        rewards_per_game = loaded_checkpoint["rewards_per_game"]
+        epsilon_history = loaded_checkpoint["epsilon_history"]
+
+    for epoch in range(start_epoch, num_epochs):
+        epsilon = max(
+            max_epsilon - (epoch / epsilon_decrease_epochs) * (max_epsilon - min_epsilon), min_epsilon
+        ) * random.random()
         game = Game2048QWrapper(field_size)
 
         states = []
@@ -125,6 +136,7 @@ def main():
         dones = []
 
         game_reward = 0
+        policy_net = policy_net.eval()
         for game_iter in range(num_game_steps):
             game_state = torch.from_numpy(game.game.field.copy())[None]
             prediction = policy_net.forward_epsilon_greedy(game_state.cuda(), epsilon)
@@ -171,13 +183,13 @@ def main():
                 actions.clear()
                 next_states.clear()
                 dones.clear()
-
             if done:
                 break
 
         max_value_per_game.append(game.game.field.max())
         rewards_per_game.append(game_reward)
         epsilon_history.append(epsilon)
+        fields_per_game.append(game.game.field)
         print(game.game.field.max(), game_reward, epsilon, epoch)
         if epoch % 1000 == 0:
             torch.save({
@@ -201,8 +213,9 @@ def main():
                 },
                 "max_value_per_game": max_value_per_game,
                 "epsilon_history": epsilon_history,
-                "rewards_per_game": rewards_per_game
-            }, "./checkpoint2_1.pt")
+                "rewards_per_game": rewards_per_game,
+                "fields_per_game": fields_per_game
+            }, "./checkpoint3_0.pt")
 
 
 

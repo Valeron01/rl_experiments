@@ -12,11 +12,13 @@ from genetic_algorithm import Agent, GA2048Wrapper
 from main_q_learning import QNetwork, Game2048QWrapper
 from game import render_field
 
-target_net, policy_net, optimizer, step = torch.load("./checkpoint3.pt")
-# policy_net = QNetwork(1).cuda()
-policy_net = policy_net.eval()
-print("step: ", step)
-assert False
+checkpoint = torch.load("./checkpoint2_2.pt")
+
+state_dict = checkpoint["optimizer"]
+
+policy_net = QNetwork(**checkpoint["model_parameters"]).cuda().eval()
+policy_net.load_state_dict(checkpoint["target_net"])  # target_net|policy_net
+
 game = Game2048QWrapper(4, 0.1)
 # np.random.seed(0)
 for i in range(20005):
@@ -29,7 +31,7 @@ for i in range(20005):
     print(policy_net(inputs_tensor))
     reward, done = game.make_step(step)
     print(reward)
-    if reward == -0.05:
+    if reward == -10.5:
         step = policy_net.forward_epsilon_greedy(inputs_tensor, 1)
         game.make_step(step)
 
