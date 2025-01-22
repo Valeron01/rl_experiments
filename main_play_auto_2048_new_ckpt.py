@@ -12,7 +12,7 @@ from genetic_algorithm import Agent, GA2048Wrapper
 from main_q_learning import QNetwork, Game2048QWrapper
 from game import render_field
 
-checkpoint = torch.load("./checkpoint3_5.pt")
+checkpoint = torch.load("checkpoints_dqn/checkpoint6_2.pt")
 
 state_dict = checkpoint["optimizer"]
 

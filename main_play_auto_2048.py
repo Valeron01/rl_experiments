@@ -12,11 +12,12 @@ from genetic_algorithm import Agent, GA2048Wrapper
 from main_q_learning import QNetwork, Game2048QWrapper
 from game import render_field
 
-target_net, policy_net, optimizer, step = torch.load("./checkpoint3.pt")
+target_net, policy_net, optimizer, step = torch.load("checkpoints_dqn/checkpoint3.pt")
 # policy_net = QNetwork(1).cuda()
 policy_net = policy_net.eval()
 print("step: ", step)
-assert False
+# assert False
+
 game = Game2048QWrapper(4, 0.1)
 # np.random.seed(0)
 for i in range(20005):

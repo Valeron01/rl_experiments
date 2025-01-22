@@ -7,33 +7,35 @@ from tqdm import trange
 
 from game import Game2048, ActionResult
 from genetic_algorithm import Agent, GA2048Wrapper
+from snake_game import SnakeGame
 
 
 class QNetwork(nn.Module):
-    def __init__(self, field_size=4, d_model=128, n_heads=2, n_layers=5, dim_feedforward=512):
+    def __init__(self, d_model=128):
         super().__init__()
 
-        self.input_projection = nn.Linear(1, d_model)
-        self.position_encoding = nn.Parameter(torch.randn(1, field_size ** 2, d_model))
-        self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model, n_heads, dim_feedforward, batch_first=True), num_layers=n_layers
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, 32, 3, 1, 1),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Conv2d(32, 64, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Conv2d(64, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Conv2d(96, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+            nn.Flatten(1),
+            nn.Linear(384, d_model),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(d_model, 4)
         )
-        self.last = nn.Linear(d_model, 4)
 
     def forward(self, x):
         assert x.ndim == 3
-        inputs = x.flatten(1)[:, :, None]
-        inputs[inputs == 0] = 1
-        inputs = torch.log2(inputs)
-        inputs = inputs / 7
-
-        inputs = inputs * 2 - 1
-
-        projected = self.input_projection(inputs)
-        pe = self.position_encoding + projected
-        tr = self.transformer(pe)
-        last = self.last(tr.mean(1))
-        return last
+        x = x[:, None].float()
+        return self.conv(x)
 
     def forward_epsilon_greedy(self, state, epsilon):
         assert state.shape[0] == 1
@@ -44,74 +46,60 @@ class QNetwork(nn.Module):
             return self(state).argmax().item()
 
 
-class Game2048QWrapper:
+class SnakeQWrapper:
     def __init__(self, field_size, four_prob=0.1):
-        self.game = Game2048(field_size, four_prob)
-        self.n_bad_steps = 0
-        self.neg_reward = 0
+        self.game = SnakeGame(16, 16)
+        self.n_steps = 0
 
-    def make_step(self, step_index):
-        # num_current_zeros = np.count_nonzero(self.game.field == 0)
-        if step_index == 0:
-            step_result, merged_values = self.game.move_top()
-        elif step_index == 1:
-            step_result, merged_values = self.game.move_right()
-        elif step_index == 2:
-            step_result, merged_values = self.game.move_bottom()
-        elif step_index == 3:
-            step_result, merged_values = self.game.move_left()
+    def make_step(self, action):
+        if action == 0:
+            step_result = self.game.move_up()
+        elif action == 1:
+            step_result = self.game.move_right()
+        elif action == 2:
+            step_result = self.game.move_down()
+        elif action == 3:
+            step_result = self.game.move_left()
         else:
             raise NotImplementedError()
 
-        # num_new_zeros = np.count_nonzero(self.game.field == 0)
-
-        # delta_zeros = num_current_zeros - num_new_zeros
-
-        reward = sum(np.power(np.log2(merged_values), 2))
-
-        self.neg_reward += 0.001
-
+        reward = 0
         done = False
-        if step_result == ActionResult.ACTION_PERFORMED:
-            reward += 0
-            self.n_bad_steps = 0
-        elif step_result == ActionResult.ACTION_BLOCKED:
-            reward += -15
-            self.n_bad_steps += 1
-        else:
+        if step_result == SnakeGame.SnakeGameActionResult.ACTION_PERFORMED:
+            reward = -0.001
+        if step_result == SnakeGame.SnakeGameActionResult.FOOD_EATEN:
+            reward = 10
+        if step_result == SnakeGame.SnakeGameActionResult.DEAD:
+            reward = -5
             done = True
-            reward += -150
+        if step_result == SnakeGame.SnakeGameActionResult.WON:
+            reward = 5
+            done = True
 
-        reward += self.neg_reward
+        self.n_steps += 1
 
-        reward /= 50
-
-        done = done or self.n_bad_steps == 5
+        done = done or self.n_steps >= 10000
 
         return reward, done
 
 
 def main():
     max_epsilon = 0.9
-    min_epsilon = 0.05
-    epsilon_decrease_epochs = 80000
+    min_epsilon = 0.005
+    epsilon_decrease_epochs = 75000
     num_game_steps = 4096
-    gamma = 0.95
-    field_size = 4
+    gamma = 0.9
+    field_size = 16
     num_epochs = 10_000_000
     batch_size = 128
-    lr = 1e-4
+    lr = 3e-4
     weight_decay = 1e-2
-    tau = 0.005
+    tau = 0.01
     start_epoch = 0
-    random_epsilon_start = 35_000
+    random_epsilon_start = 10_000
 
     model_parameters = {
-        "field_size": field_size,
-        "d_model": 128,
-        "n_heads": 2,
-        "dim_feedforward": 256,
-        "n_layers": 5
+        "d_model": 128
     }
 
     policy_net = QNetwork(**model_parameters).cuda()
@@ -125,8 +113,8 @@ def main():
     epsilon_history = []
     fields_per_game = []
 
-    if False:
-        loaded_checkpoint = torch.load("checkpoints_dqn/checkpoint6_2.pt")
+    if True:
+        loaded_checkpoint = torch.load("checkpoints_dqn_snake/checkpoint2_0.pt")
         optimizer.load_state_dict(loaded_checkpoint["optimizer"])
         target_net.load_state_dict(loaded_checkpoint["target_net"])
         policy_net.load_state_dict(loaded_checkpoint["policy_net"])
@@ -141,9 +129,9 @@ def main():
             max_epsilon - (epoch / epsilon_decrease_epochs) * (max_epsilon - min_epsilon), min_epsilon
         )
         if epoch > random_epsilon_start:
-            epsilon *= random.random() ** 2
+            epsilon *= random.random()
 
-        game = Game2048QWrapper(field_size)
+        game = SnakeQWrapper(field_size)
 
         states = []
         actions = []
@@ -208,11 +196,11 @@ def main():
                             1 - tau)
                 target_net.load_state_dict(target_net_state_dict)
 
-        max_value_per_game.append(game.game.field.max())
+        max_value_per_game.append(game.game.score)
         rewards_per_game.append(game_reward)
         epsilon_history.append(epsilon)
         fields_per_game.append(game.game.field)
-        print(game.game.field.max(), game_reward, epsilon, epoch)
+        print(game.game.score, game_reward, epsilon, epoch)
         if epoch % 1000 == 0:
             print("Saving checkpoint")
             torch.save({
@@ -239,7 +227,7 @@ def main():
                 "epsilon_history": epsilon_history,
                 "rewards_per_game": rewards_per_game,
                 "fields_per_game": fields_per_game
-            }, "checkpoints_dqn/checkpoint7_0.pt")
+            }, "checkpoints_dqn_snake/checkpoint2_1.pt")
 
 
 if __name__ == '__main__':

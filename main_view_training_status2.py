@@ -5,8 +5,8 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import torch
 
-checkpoint1 = torch.load("./checkpoint3_1.pt")
-checkpoint2 = torch.load("./checkpoint3_0.pt")
+checkpoint1 = torch.load("checkpoints_dqn/checkpoint3_5.pt")
+checkpoint2 = torch.load("./checkpoints_ppo/0_0.pt")
 
 
 rewards_per_game1 = checkpoint1["max_value_per_game"]
