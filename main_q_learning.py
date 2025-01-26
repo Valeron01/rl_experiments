@@ -44,11 +44,51 @@ class QNetwork(nn.Module):
             return self(state).argmax().item()
 
 
+class QNetworkCNN(nn.Module):
+    def __init__(self, field_size=4, d_model=128, n_heads=2, n_layers=5, dim_feedforward=512):
+        super().__init__()
+
+        self.model = nn.Sequential(
+            nn.Conv2d(1, 32, 3, 1, 1),
+            nn.LeakyReLU(inplace=True),
+            nn.Conv2d(32, 64, 2, 2, 0),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Conv2d(64, 64, 3, 1, 1),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Flatten(),
+
+            nn.Linear(256, 64),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(64, 4)
+
+        )
+
+    def forward(self, x):
+        assert x.ndim == 3
+        inputs = x[:, None]
+        inputs[inputs == 0] = 1
+        inputs = torch.log2(inputs)
+        inputs = inputs / 7
+
+        inputs = inputs * 2 - 1
+
+        return self.model(inputs)
+
+    def forward_epsilon_greedy(self, state, epsilon):
+        assert state.shape[0] == 1
+        if random.random() < epsilon:
+            return random.randrange(0, 4)
+
+        with torch.inference_mode():
+            return self(state).argmax().item()
+
+
 class Game2048QWrapper:
     def __init__(self, field_size, four_prob=0.1):
         self.game = Game2048(field_size, four_prob)
         self.n_bad_steps = 0
-        self.neg_reward = 0
 
     def make_step(self, step_index):
         # num_current_zeros = np.count_nonzero(self.game.field == 0)
@@ -66,25 +106,25 @@ class Game2048QWrapper:
         # num_new_zeros = np.count_nonzero(self.game.field == 0)
 
         # delta_zeros = num_current_zeros - num_new_zeros
-
-        reward = sum(np.power(np.log2(merged_values), 2))
-
-        self.neg_reward += 0.001
+        merged_values = np.log2(merged_values)
+        reward = 0
+        for i in merged_values:
+            if i < 8:
+                reward += i
+            else:
+                reward += i * i
 
         done = False
         if step_result == ActionResult.ACTION_PERFORMED:
             reward += 0
-            self.n_bad_steps = 0
         elif step_result == ActionResult.ACTION_BLOCKED:
-            reward += -15
+            reward += -10
             self.n_bad_steps += 1
         else:
             done = True
-            reward += -150
+            reward += -50
 
-        reward += self.neg_reward
-
-        reward /= 50
+        reward /= 10
 
         done = done or self.n_bad_steps == 5
 
@@ -94,17 +134,17 @@ class Game2048QWrapper:
 def main():
     max_epsilon = 0.9
     min_epsilon = 0.05
-    epsilon_decrease_epochs = 80000
+    epsilon_decrease_epochs = 140000
     num_game_steps = 4096
-    gamma = 0.95
+    gamma = 0.85
     field_size = 4
     num_epochs = 10_000_000
     batch_size = 128
-    lr = 1e-4
+    lr = 3e-4
     weight_decay = 1e-2
     tau = 0.005
     start_epoch = 0
-    random_epsilon_start = 35_000
+    random_epsilon_start = 1_000
 
     model_parameters = {
         "field_size": field_size,
@@ -114,9 +154,9 @@ def main():
         "n_layers": 5
     }
 
-    policy_net = QNetwork(**model_parameters).cuda()
+    policy_net = QNetworkCNN(**model_parameters).cuda()
     optimizer = torch.optim.AdamW(policy_net.parameters(), lr=lr, weight_decay=weight_decay, amsgrad=True)
-    target_net = QNetwork(**model_parameters).cuda()
+    target_net = QNetworkCNN(**model_parameters).cuda()
     target_net.load_state_dict(policy_net.state_dict())
     target_net.requires_grad_(False)
 
@@ -126,7 +166,7 @@ def main():
     fields_per_game = []
 
     if False:
-        loaded_checkpoint = torch.load("checkpoints_dqn/checkpoint6_2.pt")
+        loaded_checkpoint = torch.load("checkpoints_dqn/checkpoint7_0.pt")
         optimizer.load_state_dict(loaded_checkpoint["optimizer"])
         target_net.load_state_dict(loaded_checkpoint["target_net"])
         policy_net.load_state_dict(loaded_checkpoint["policy_net"])
@@ -239,7 +279,7 @@ def main():
                 "epsilon_history": epsilon_history,
                 "rewards_per_game": rewards_per_game,
                 "fields_per_game": fields_per_game
-            }, "checkpoints_dqn/checkpoint7_0.pt")
+            }, "checkpoints_dqn/checkpoint11_0.pt")
 
 
 if __name__ == '__main__':
