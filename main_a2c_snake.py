@@ -65,9 +65,9 @@ class SnakeA2CWrapper:
         reward = 0
         done = False
         if step_result == SnakeGame.SnakeGameActionResult.ACTION_PERFORMED:
-            reward = -0.001
+            reward = 0
         if step_result == SnakeGame.SnakeGameActionResult.FOOD_EATEN:
-            reward = 1
+            reward = 1.5
         if step_result == SnakeGame.SnakeGameActionResult.DEAD:
             reward = -1
             done = True
@@ -87,7 +87,7 @@ class SnakeA2CWrapper:
 
 def main():
     num_game_steps = 4096
-    gamma = 0.7
+    gamma = 0.99
     field_size = 16
     num_epochs = 10_000_000
     batch_size = 128
@@ -96,7 +96,7 @@ def main():
     start_epoch = 0
     update_networks_every_n = 2048
     entropy_regularization = 0.5
-    critic_weight = 3
+    critic_weight = 5
 
     model_parameters = {
         "d_model": 128
@@ -156,38 +156,38 @@ def main():
                 dones = torch.FloatTensor(dones).cuda()
                 next_states = torch.cat(next_states, dim=0).cuda()
 
-                batch_indices = torch.randperm(states.shape[0])
-                batch_indices = torch.tensor_split(batch_indices, max(1, batch_indices.shape[0] // batch_size))
+                for _ in range(6):
+                    batch_indices = torch.randperm(states.shape[0])
+                    batch_indices = torch.tensor_split(batch_indices, max(1, batch_indices.shape[0] // batch_size))
 
-                policy_net.train()
-                for indices in batch_indices:
-                    states_batch = states[indices]
-                    actions_batch = actions[indices]
-                    rewards_batch = rewards[indices]
-                    dones_batch = dones[indices]
-                    next_states_batch = next_states[indices]
+                    policy_net.train()
+                    for indices in batch_indices:
+                        states_batch = states[indices]
+                        actions_batch = actions[indices]
+                        rewards_batch = rewards[indices]
+                        dones_batch = dones[indices]
+                        next_states_batch = next_states[indices]
 
-                    predicted_actions, predicted_values = policy_net(states_batch)
-                    with torch.no_grad():
-                        _, predicted_future_values = policy_net(next_states_batch)
+                        predicted_actions, predicted_values = policy_net(states_batch)
+                        with torch.no_grad():
+                            _, predicted_future_values = policy_net(next_states_batch)
 
-                    target_values = rewards_batch + gamma * predicted_future_values * (1 - dones_batch)
+                        target_values = rewards_batch + gamma * predicted_future_values * (1 - dones_batch)
 
-                    critic_loss = nn.functional.mse_loss(predicted_values, target_values)
+                        critic_loss = nn.functional.mse_loss(predicted_values, target_values)
 
-                    advantage = rewards_batch + predicted_future_values * gamma - predicted_values.detach()
-                    advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
-                    actor_loss = (-advantage * predicted_actions.log_prob(actions_batch)).mean()
+                        advantage = rewards_batch + predicted_future_values * gamma - predicted_values.detach()
+                        advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
+                        actor_loss = (-advantage * predicted_actions.log_prob(actions_batch)).mean()
 
-                    entropy_loss = -predicted_actions.entropy().mean()
+                        entropy_loss = -predicted_actions.entropy().mean()
 
-                    total_loss = critic_loss * critic_weight + actor_loss + entropy_loss * entropy_regularization
+                        total_loss = critic_loss * critic_weight + actor_loss + entropy_loss * entropy_regularization
 
-                    optimizer.zero_grad()
-                    total_loss.backward()
-                    nn.utils.clip_grad_norm_(policy_net.parameters(), 10)
-                    optimizer.step()
-                    print(total_loss.item(), entropy_loss.item(), actor_loss.item(), critic_loss.item())
+                        optimizer.zero_grad()
+                        total_loss.backward()
+                        nn.utils.clip_grad_norm_(policy_net.parameters(), 10)
+                        optimizer.step()
 
                 states = []
                 actions = []
@@ -223,7 +223,7 @@ def main():
                 "epsilon_history": epsilon_history,
                 "rewards_per_game": rewards_per_game,
                 "fields_per_game": fields_per_game
-            }, "checkpoints_a2c_snake/checkpoint4_1.pt")
+            }, "checkpoints_a2c_snake/checkpoint5_1.pt")
 
 
 if __name__ == '__main__':
