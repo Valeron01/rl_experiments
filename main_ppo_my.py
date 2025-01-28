@@ -43,6 +43,75 @@ class PPONetwork(nn.Module):
     def forward(self, x):
         assert x.ndim == 3
         x = x[:, None].float()
+        # x = x / 3
+        #
+        # x[x==0] = -0.5
+
+        features = self.conv(x)
+
+        actor_distributions = torch.distributions.Categorical(probs=self.actor_head(features).softmax(-1))
+        values = self.value_head(features).squeeze(1)
+        return actor_distributions, values
+
+
+class ResBlock(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, in_channels, 3, 1, 1)
+        self.bn1 = nn.BatchNorm2d(in_channels)
+        self.act1 = nn.LeakyReLU(inplace=True)
+
+        self.conv2 = nn.Conv2d(in_channels, in_channels, 3, 1, 1)
+        self.act2 = nn.LeakyReLU(inplace=True)
+        self.bn2 = nn.BatchNorm2d(in_channels)
+
+    def forward(self, x):
+        conv1 = self.conv1(x)
+        bn1 = self.bn1(conv1)
+        act1 = self.act1(bn1)
+
+        conv2 = self.conv2(act1)
+        bn2 = self.bn2(conv2)
+        act2 = self.act2(bn2)
+
+        return x + act2
+
+
+class PPOResidualNetwork(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, 32, 3, 1, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(32),
+            nn.Conv2d(32, 64, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(64),
+            nn.Conv2d(64, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(96),
+
+            nn.Conv2d(96, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Flatten(1),
+            nn.Linear(384, 384),
+            nn.LeakyReLU(inplace=True)
+        )
+
+        self.actor_head = nn.Linear(384, 4)
+        self.value_head = nn.Linear(384, 1)
+
+    def forward(self, x):
+        assert x.ndim == 3
+        x = x[:, None].float()
+        x = x / 3
+
+        x[x==0] = -0.2
 
         features = self.conv(x)
 
@@ -74,12 +143,12 @@ class SnakePPOWrapper:
         if step_result == SnakeGame.SnakeGameActionResult.ACTION_PERFORMED:
             reward = 0
         if step_result == SnakeGame.SnakeGameActionResult.FOOD_EATEN:
-            reward = 5
+            reward = 10
         if step_result == SnakeGame.SnakeGameActionResult.DEAD:
-            reward = -1
+            reward = -5
             done = True
         if step_result == SnakeGame.SnakeGameActionResult.WON:
-            reward = 10
+            reward = 100
             done = True
 
         self.n_steps += 1
@@ -95,13 +164,13 @@ def main():
     model = PPONetwork().cuda()
     n_iterations = 10000000
     batch_size = 2048
-    lr = 7e-4
+    lr = 1e-3
     n_epochs = 8
-    gamma = 0.95
+    gamma = 0.99
     num_actions_to_collect = 4096
     epsilon = 0.2
     entropy_coefficient = 0.02
-    return_coefficient = 5
+    return_coefficient = 1
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     n_episodes = 0
@@ -172,24 +241,7 @@ def main():
             optimizer.step()
 
         if epoch % 10 == 0:
-            torch.save(model, "checkpoints_ppo_snake_my/checkpoint_0_0.pt")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            torch.save(model, "checkpoints_ppo_snake_my/checkpoint_1_0.pt")
 
 
 if __name__ == '__main__':
