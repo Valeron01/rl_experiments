@@ -1,7 +1,11 @@
+import os.path
+
 import numpy as np
 from torch import nn
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
+import tb_utils
 from snake_game import SnakeGame
 
 
@@ -66,15 +70,15 @@ class ResBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(in_channels)
 
     def forward(self, x):
-        conv1 = self.conv1(x)
-        bn1 = self.bn1(conv1)
-        act1 = self.act1(bn1)
+        block = self.conv1(x)
+        # block = self.bn1(block)
+        block = self.act1(block)
 
-        conv2 = self.conv2(act1)
-        bn2 = self.bn2(conv2)
-        act2 = self.act2(bn2)
+        block = self.conv2(block)
+        # block = self.bn2(block)
+        block = self.act2(block)
 
-        return x + act2
+        return x + block
 
 
 class PPOResidualNetwork(nn.Module):
@@ -122,7 +126,15 @@ class PPOResidualNetwork(nn.Module):
 
 
 class SnakePPOWrapper:
-    def __init__(self, field_size):
+    def __init__(
+            self,
+            field_size=16, performed_reward=0, eaten_reward=10, dead_reward=-5, won_reward=100, terminate_iters=5000
+    ):
+        self.dead_reward = dead_reward
+        self.eaten_reward = eaten_reward
+        self.terminate_iters = terminate_iters
+        self.performed_reward = performed_reward
+        self.won_reward = won_reward
         self.game = SnakeGame(field_size, field_size)
         self.n_steps = 0
 
@@ -141,26 +153,29 @@ class SnakePPOWrapper:
         reward = 0
         done = False
         if step_result == SnakeGame.SnakeGameActionResult.ACTION_PERFORMED:
-            reward = 0
+            reward = self.performed_reward
         if step_result == SnakeGame.SnakeGameActionResult.FOOD_EATEN:
-            reward = 10
+            reward = self.eaten_reward
         if step_result == SnakeGame.SnakeGameActionResult.DEAD:
-            reward = -5
+            reward = self.dead_reward
             done = True
         if step_result == SnakeGame.SnakeGameActionResult.WON:
-            reward = 100
+            reward = self.won_reward
             done = True
 
         self.n_steps += 1
 
-        done = done or self.n_steps >= 10000
-        if self.n_steps >= 10_000:
+        done = done or self.n_steps >= self.terminate_iters
+        if self.n_steps >= self.terminate_iters:
             print("PIZDAAAAAAAAAAAAAa")
 
         return reward, done
 
 
 def main():
+    writer = tb_utils.build_logger(
+        "./logs_ppo_snake"
+    )
     model = PPONetwork().cuda()
     n_iterations = 10000000
     batch_size = 2048
@@ -169,13 +184,36 @@ def main():
     gamma = 0.99
     num_actions_to_collect = 4096
     epsilon = 0.2
-    entropy_coefficient = 0.02
+    entropy_coefficient = 0.005
     return_coefficient = 1
+
+    env_params = {
+        "field_size": 16,
+        "performed_reward": 0,
+        "eaten_reward": 10,
+        "dead_reward": -5,
+        "won_reward": 100,
+        "terminate_iters": 5000
+    }
+    hparam_dict = {
+        "n_iterations": n_iterations,
+        "batch_size": batch_size,
+        "lr": lr,
+        "n_epochs": n_epochs,
+        "gamma": gamma,
+        "num_actions_to_collect": num_actions_to_collect,
+        "epsilon": epsilon,
+        "entropy_coefficient": entropy_coefficient,
+        "return_coefficient": return_coefficient,
+        "model_class": str(model.__class__),
+    }
+    hparam_dict.update(env_params)
+    writer.add_hparams(hparam_dict, metric_dict={"default_hp": -1})
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     n_episodes = 0
     for epoch in range(n_iterations):
-        env = SnakePPOWrapper(16)
+        env = SnakePPOWrapper(**env_params)
 
         states = []
         actions = []
@@ -183,8 +221,11 @@ def main():
         dones = []
         values = []
         old_log_probs = []
+        game_scores = []
+        num_steps = []
         model = model.eval()
-        for game_iter in range(num_actions_to_collect):
+        game_iter = 0
+        while True:
             state_tensor = torch.from_numpy(env.game.field).cuda()[None]
             with torch.no_grad():
                 action, value = model(state_tensor)
@@ -201,8 +242,14 @@ def main():
 
             if done:
                 print(epoch, n_episodes, env.game.score, env.n_steps)
+                num_steps.append(env.n_steps)
+                game_scores.append(env.game.score)
                 n_episodes += 1
-                env = SnakePPOWrapper(16)
+                env = SnakePPOWrapper(**env_params)
+
+            game_iter += 1
+            if game_iter >= num_actions_to_collect and done:
+                break
 
         returns = compute_returns(rewards, gamma, dones)
 
@@ -229,11 +276,19 @@ def main():
             loss_returns = nn.functional.smooth_l1_loss(predicted_returns, returns_batch)
             clipped_ratios = torch.clamp(ratios, 1 - epsilon, 1 + epsilon)
             advantages = returns_batch - values_batch
+
+            advantages_log = advantages.detach().mean()
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
             advantages = advantages.detach()
             policy_loss = -torch.min(ratios * advantages, clipped_ratios * advantages).mean()
             entropy_loss = -predicted_actions.entropy().mean()
             total_loss = policy_loss + loss_returns * return_coefficient + entropy_loss * entropy_coefficient
+
+            writer.add_scalar("total_loss", total_loss, epoch)
+            writer.add_scalar("policy_loss", policy_loss, epoch)
+            writer.add_scalar("entropy_loss", entropy_loss, epoch)
+            writer.add_scalar("advantages", advantages_log, epoch)
+
 
             optimizer.zero_grad()
             total_loss.backward()
@@ -241,7 +296,14 @@ def main():
             optimizer.step()
 
         if epoch % 10 == 0:
-            torch.save(model, "checkpoints_ppo_snake_my/checkpoint_1_0.pt")
+            target_path = os.path.join(writer.log_dir, "Checkpoints/Checkpoint.pt")
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            torch.save(model, target_path)
+
+        writer.add_scalar("mean_score", np.mean(game_scores), epoch)
+        writer.add_scalar("max_score", np.max(game_scores), epoch)
+        writer.add_scalar("games_played", len(game_scores), epoch)
+        writer.add_scalar("n_steps_mean", np.mean(num_steps), epoch)
 
 
 if __name__ == '__main__':
