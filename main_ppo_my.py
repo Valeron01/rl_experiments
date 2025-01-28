@@ -178,18 +178,18 @@ def main():
     )
     model = PPONetwork().cuda()
     n_iterations = 10000000
-    batch_size = 2048
-    lr = 1e-3
+    batch_size = 128
+    lr = 3e-4
     n_epochs = 8
     gamma = 0.99
     num_actions_to_collect = 4096
     epsilon = 0.2
-    entropy_coefficient = 0.005
+    entropy_coefficient = 0.001
     return_coefficient = 1
 
     env_params = {
         "field_size": 16,
-        "performed_reward": 0,
+        "performed_reward": -0.05,
         "eaten_reward": 10,
         "dead_reward": -5,
         "won_reward": 100,
