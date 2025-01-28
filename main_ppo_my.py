@@ -184,7 +184,7 @@ def main():
     gamma = 0.99
     num_actions_to_collect = 4096
     epsilon = 0.2
-    entropy_coefficient = 0.001
+    entropy_coefficient = 0.01
     return_coefficient = 1
 
     env_params = {
