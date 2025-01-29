@@ -1,4 +1,5 @@
 import os.path
+import random
 
 import numpy as np
 from torch import nn
@@ -65,18 +66,10 @@ class ResBlock(nn.Module):
         self.bn1 = nn.BatchNorm2d(in_channels)
         self.act1 = nn.LeakyReLU(inplace=True)
 
-        self.conv2 = nn.Conv2d(in_channels, in_channels, 3, 1, 1)
-        self.act2 = nn.LeakyReLU(inplace=True)
-        self.bn2 = nn.BatchNorm2d(in_channels)
-
     def forward(self, x):
         block = self.conv1(x)
-        # block = self.bn1(block)
+        block = self.bn1(block)
         block = self.act1(block)
-
-        block = self.conv2(block)
-        # block = self.bn2(block)
-        block = self.act2(block)
 
         return x + block
 
@@ -173,6 +166,11 @@ class SnakePPOWrapper:
 
 
 def main():
+    seed = 0
+    torch.random.manual_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+
     writer = tb_utils.build_logger(
         "./logs_ppo_snake"
     )
@@ -184,14 +182,14 @@ def main():
     gamma = 0.99
     num_actions_to_collect = 4096
     epsilon = 0.2
-    entropy_coefficient = 0.01
+    entropy_coefficient = 0.005
     return_coefficient = 1
 
     env_params = {
         "field_size": 16,
-        "performed_reward": -0.05,
-        "eaten_reward": 10,
-        "dead_reward": -5,
+        "performed_reward": -0.01,
+        "eaten_reward": 1,
+        "dead_reward": -1,
         "won_reward": 100,
         "terminate_iters": 5000
     }
@@ -255,7 +253,7 @@ def main():
 
         states = torch.cat(states, 0)
         actions = torch.cat(actions, 0)
-        returns = torch.from_numpy(returns).cuda()
+        returns = torch.from_numpy(returns).cuda().float()
         values = torch.cat(values, 0)
 
         old_log_probs = torch.cat(old_log_probs, 0)
@@ -275,7 +273,7 @@ def main():
 
             loss_returns = nn.functional.smooth_l1_loss(predicted_returns, returns_batch)
             clipped_ratios = torch.clamp(ratios, 1 - epsilon, 1 + epsilon)
-            advantages = returns_batch - values_batch
+            advantages = returns_batch - predicted_returns.detach()
 
             advantages_log = advantages.detach().mean()
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -288,6 +286,8 @@ def main():
             writer.add_scalar("policy_loss", policy_loss, epoch)
             writer.add_scalar("entropy_loss", entropy_loss, epoch)
             writer.add_scalar("advantages", advantages_log, epoch)
+            writer.add_scalar("returns_loss", loss_returns, epoch)
+
 
 
             optimizer.zero_grad()
