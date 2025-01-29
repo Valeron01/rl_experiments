@@ -121,7 +121,8 @@ class PPOResidualNetwork(nn.Module):
 class SnakePPOWrapper:
     def __init__(
             self,
-            field_size=16, performed_reward=0, eaten_reward=10, dead_reward=-5, won_reward=100, terminate_iters=5000
+            field_size=16, performed_reward=0, eaten_reward=10, dead_reward=-5, won_reward=100, terminate_iters=5000,
+            n_steps_to_find_food: int = 1000, not_find_food_penalty: int = -0.1
     ):
         self.dead_reward = dead_reward
         self.eaten_reward = eaten_reward
@@ -130,6 +131,9 @@ class SnakePPOWrapper:
         self.won_reward = won_reward
         self.game = SnakeGame(field_size, field_size)
         self.n_steps = 0
+        self.n_steps_to_find_food = n_steps_to_find_food
+        self.n_steps_without_food = 0
+        self.not_find_food_penalty = not_find_food_penalty
 
     def make_step(self, action):
         if action == 0:
@@ -147,14 +151,19 @@ class SnakePPOWrapper:
         done = False
         if step_result == SnakeGame.SnakeGameActionResult.ACTION_PERFORMED:
             reward = self.performed_reward
+            self.n_steps_without_food += 1
         if step_result == SnakeGame.SnakeGameActionResult.FOOD_EATEN:
             reward = self.eaten_reward
+            self.n_steps_without_food = 0
         if step_result == SnakeGame.SnakeGameActionResult.DEAD:
             reward = self.dead_reward
             done = True
         if step_result == SnakeGame.SnakeGameActionResult.WON:
             reward = self.won_reward
             done = True
+
+        if self.n_steps_without_food >= self.n_steps_to_find_food:
+            reward += self.not_find_food_penalty
 
         self.n_steps += 1
 
@@ -182,7 +191,7 @@ def main():
     gamma = 0.99
     num_actions_to_collect = 4096
     epsilon = 0.2
-    entropy_coefficient = 0.005
+    entropy_coefficient = 0.01
     return_coefficient = 1
 
     env_params = {
@@ -191,7 +200,9 @@ def main():
         "eaten_reward": 1,
         "dead_reward": -1,
         "won_reward": 100,
-        "terminate_iters": 5000
+        "terminate_iters": 5000,
+        "n_steps_to_find_food": 24,
+        "not_find_food_penalty": -0.01
     }
     hparam_dict = {
         "n_iterations": n_iterations,
@@ -287,8 +298,6 @@ def main():
             writer.add_scalar("entropy_loss", entropy_loss, epoch)
             writer.add_scalar("advantages", advantages_log, epoch)
             writer.add_scalar("returns_loss", loss_returns, epoch)
-
-
 
             optimizer.zero_grad()
             total_loss.backward()

@@ -121,14 +121,14 @@ def main():
     for i in range(1000000):
         image = render_snake_field(game.field, game.snake, 16, 2)
         cv2.imshow("qwe", image)
-        key_id = cv2.waitKey(1)
+        key_id = cv2.waitKey(0)
         if key_id == -1:
             key = previous_key
         else:
             key = chr(key_id)
             previous_key = key
 
-        key = np.random.choice(["w", "a", "s", "d"])
+        # key = np.random.choice(["w", "a", "s", "d"])
 
         step_result = None
         if key == "w":
