@@ -215,8 +215,6 @@ class PPOResidualNetwork3(nn.Module):
     def forward(self, x):
         assert x.ndim == 3
         x = x[:, None].float()
-        x[x == 0] = -0.2
-        x = x / 3
 
 
         features = self.conv(x)
@@ -294,7 +292,7 @@ def main():
     writer = tb_utils.build_logger(
         "./logs_ppo_snake"
     )
-    model = PPOResidualNetwork2().cuda()
+    model = PPOResidualNetwork3().cuda()
     n_iterations = 10000000
     batch_size = 128
     lr = 1e-3
