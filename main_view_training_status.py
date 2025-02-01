@@ -5,7 +5,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import torch
 
-checkpoint = torch.load("checkpoints_a2c_snake/checkpoint4_1.pt")
+checkpoint = torch.load("checkpoints_dqn_snake/checkpoint2_1.pt")
 # print(checkpoint["epoch"])
 print(checkpoint["hyper_parameters"])
 print(checkpoint["model_parameters"])

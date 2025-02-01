@@ -106,15 +106,125 @@ class PPOResidualNetwork(nn.Module):
     def forward(self, x):
         assert x.ndim == 3
         x = x[:, None].float()
-        x = x / 3
-
-        x[x==0] = -0.2
+        # x = x / 3
+        #
+        # x[x==0] = -0.2
 
         features = self.conv(x)
 
-        actor_distributions = torch.distributions.Categorical(probs=self.actor_head(features).softmax(-1))
+        actor_distributions = torch.distributions.Categorical(logits=self.actor_head(features))
         values = self.value_head(features).squeeze(1)
         return actor_distributions, values
+
+
+class PPOResidualNetwork2(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, 32, 3, 1, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            nn.Conv2d(32, 64, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(64),
+            ResBlock(64),
+            nn.Conv2d(64, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(96),
+            ResBlock(96),
+
+            nn.Conv2d(96, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Flatten(1),
+            nn.Linear(384, 384),
+            nn.LeakyReLU(inplace=True)
+        )
+
+        self.actor_head = nn.Linear(384, 4)
+        self.value_head = nn.Linear(384, 1)
+
+    def forward(self, x):
+        assert x.ndim == 3
+        x = x[:, None].float()
+        # x = x / 3
+        #
+        # x[x==0] = -0.2
+
+        features = self.conv(x)
+
+        actor_distributions = torch.distributions.Categorical(logits=self.actor_head(features))
+        values = self.value_head(features).squeeze(1)
+        return actor_distributions, values
+
+
+class PPOResidualNetwork3(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, 32, 3, 1, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            nn.Conv2d(32, 64, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(64),
+            ResBlock(64),
+            ResBlock(64),
+            nn.Conv2d(64, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(96),
+            ResBlock(96),
+        )
+
+        self.actor_head = nn.Sequential(
+            ResBlock(96),
+
+            nn.Conv2d(96, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Flatten(1),
+            nn.Linear(384, 384),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(384, 4),
+        )
+        self.value_head = nn.Sequential(
+            ResBlock(96),
+
+            nn.Conv2d(96, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Flatten(1),
+            nn.Linear(384, 384),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(384, 1),
+        )
+
+    def forward(self, x):
+        assert x.ndim == 3
+        x = x[:, None].float()
+        x[x == 0] = -0.2
+        x = x / 3
+
+
+        features = self.conv(x)
+
+        actor_distributions = torch.distributions.Categorical(logits=self.actor_head(features))
+        values = self.value_head(features).squeeze(1)
+        return actor_distributions, values
+
 
 
 
@@ -135,6 +245,8 @@ class SnakePPOWrapper:
         self.n_steps_without_food = 0
         self.not_find_food_penalty = not_find_food_penalty
 
+        self.closest_distance = None
+
     def make_step(self, action):
         if action == 0:
             step_result = self.game.move_up()
@@ -153,7 +265,7 @@ class SnakePPOWrapper:
             reward = self.performed_reward
             self.n_steps_without_food += 1
         if step_result == SnakeGame.SnakeGameActionResult.FOOD_EATEN:
-            reward = self.eaten_reward
+            reward = self.eaten_reward#  + min(self.game.score, 5)
             self.n_steps_without_food = 0
         if step_result == SnakeGame.SnakeGameActionResult.DEAD:
             reward = self.dead_reward
@@ -170,7 +282,6 @@ class SnakePPOWrapper:
         done = done or self.n_steps >= self.terminate_iters
         if self.n_steps >= self.terminate_iters:
             print("PIZDAAAAAAAAAAAAAa")
-
         return reward, done
 
 
@@ -183,26 +294,26 @@ def main():
     writer = tb_utils.build_logger(
         "./logs_ppo_snake"
     )
-    model = PPONetwork().cuda()
+    model = PPOResidualNetwork2().cuda()
     n_iterations = 10000000
     batch_size = 128
-    lr = 3e-4
-    n_epochs = 8
-    gamma = 0.99
+    lr = 1e-3
+    n_epochs = 8 # Try a Different epoch count
+    gamma = 0.94
     num_actions_to_collect = 4096
     epsilon = 0.2
-    entropy_coefficient = 0.01
-    return_coefficient = 1
+    entropy_coefficient = 0.001
+    return_coefficient = 0.5
 
     env_params = {
         "field_size": 16,
         "performed_reward": -0.01,
-        "eaten_reward": 1,
+        "eaten_reward": 3,
         "dead_reward": -1,
         "won_reward": 100,
         "terminate_iters": 5000,
-        "n_steps_to_find_food": 24,
-        "not_find_food_penalty": -0.01
+        "n_steps_to_find_food": 50,
+        "not_find_food_penalty": -1
     }
     hparam_dict = {
         "n_iterations": n_iterations,
@@ -219,7 +330,7 @@ def main():
     hparam_dict.update(env_params)
     writer.add_hparams(hparam_dict, metric_dict={"default_hp": -1})
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.0, eps=1e-8)
     n_episodes = 0
     for epoch in range(n_iterations):
         env = SnakePPOWrapper(**env_params)
@@ -265,17 +376,20 @@ def main():
         states = torch.cat(states, 0)
         actions = torch.cat(actions, 0)
         returns = torch.from_numpy(returns).cuda().float()
-        values = torch.cat(values, 0)
 
         old_log_probs = torch.cat(old_log_probs, 0)
         model = model.train()
+
+        if epoch == 150:
+            for g in optimizer.param_groups:
+                g['lr'] = 0.0005
+
         for i in range(num_actions_to_collect * n_epochs // batch_size):
             samples_indices = torch.randint(0, states.shape[0], [batch_size])
 
             states_batch = states[samples_indices]
             actions_batch = actions[samples_indices]
             returns_batch = returns[samples_indices]
-            values_batch = values[samples_indices]
             old_log_probs_batch = old_log_probs[samples_indices]
 
             predicted_actions, predicted_returns = model(states_batch)
@@ -301,7 +415,7 @@ def main():
 
             optimizer.zero_grad()
             total_loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=20)
             optimizer.step()
 
         if epoch % 10 == 0:

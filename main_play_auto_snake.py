@@ -31,9 +31,9 @@ def main():
         if step == 1:
             step_result = game.move_right()
 
-        if game.score != 0:
-            print(game.score)
         if step_result == SnakeGame.SnakeGameActionResult.DEAD:
+            print(game.score)
+            cv2.waitKey(0)
             game.reset()
 
 
