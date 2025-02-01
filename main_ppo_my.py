@@ -216,6 +216,70 @@ class PPOResidualNetwork3(nn.Module):
         assert x.ndim == 3
         x = x[:, None].float()
 
+        features = self.conv(x)
+
+        actor_distributions = torch.distributions.Categorical(logits=self.actor_head(features))
+        values = self.value_head(features).squeeze(1)
+        return actor_distributions, values
+
+
+class PPOResidualNetwork4(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(3, 32, 3, 1, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            nn.Conv2d(32, 64, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(64),
+            ResBlock(64),
+            ResBlock(64),
+            nn.Conv2d(64, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            ResBlock(96),
+            ResBlock(96),
+        )
+
+        self.position_encoding = nn.Parameter(
+            torch.randn(1, 2, 16, 16)
+        )
+        nn.init.normal_(self.position_encoding, mean=0, std=0.05)
+
+        self.actor_head = nn.Sequential(
+            ResBlock(96),
+
+            nn.Conv2d(96, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Flatten(1),
+            nn.Linear(384, 384),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(384, 4),
+        )
+        self.value_head = nn.Sequential(
+            ResBlock(96),
+
+            nn.Conv2d(96, 96, 3, 2, 1),
+            nn.LeakyReLU(inplace=True),
+
+            nn.Flatten(1),
+            nn.Linear(384, 384),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(384, 1),
+        )
+
+    def forward(self, x):
+        assert x.ndim == 3
+        x = x[:, None].float()
+
+        x = torch.cat([x, self.position_encoding.tile(x.shape[0], 1, 1, 1)], dim=1)
 
         features = self.conv(x)
 
@@ -292,10 +356,10 @@ def main():
     writer = tb_utils.build_logger(
         "./logs_ppo_snake"
     )
-    model = PPOResidualNetwork3().cuda()
+    model = PPOResidualNetwork4().cuda()
     n_iterations = 10000000
     batch_size = 128
-    lr = 1e-3
+    lr = 6e-4
     n_epochs = 8 # Try a Different epoch count
     gamma = 0.94
     num_actions_to_collect = 4096
@@ -311,7 +375,7 @@ def main():
         "won_reward": 100,
         "terminate_iters": 5000,
         "n_steps_to_find_food": 50,
-        "not_find_food_penalty": -1
+        "not_find_food_penalty": -0.1
     }
     hparam_dict = {
         "n_iterations": n_iterations,
@@ -328,7 +392,7 @@ def main():
     hparam_dict.update(env_params)
     writer.add_hparams(hparam_dict, metric_dict={"default_hp": -1})
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.0, eps=1e-8)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)# Самое последнее
     n_episodes = 0
     for epoch in range(n_iterations):
         env = SnakePPOWrapper(**env_params)
@@ -381,40 +445,44 @@ def main():
         if epoch == 150:
             for g in optimizer.param_groups:
                 g['lr'] = 0.0005
+        all_sample_indices = torch.arange(0, batch_size * (num_actions_to_collect // batch_size))
+        all_sample_indices = all_sample_indices[torch.randperm(all_sample_indices.shape[0])]
+        all_sample_indices = all_sample_indices.tensor_split(
+            num_actions_to_collect // batch_size
+        )
+        for me in range(n_epochs):
+            for samples_indices in all_sample_indices:
 
-        for i in range(num_actions_to_collect * n_epochs // batch_size):
-            samples_indices = torch.randint(0, states.shape[0], [batch_size])
+                states_batch = states[samples_indices]
+                actions_batch = actions[samples_indices]
+                returns_batch = returns[samples_indices]
+                old_log_probs_batch = old_log_probs[samples_indices]
 
-            states_batch = states[samples_indices]
-            actions_batch = actions[samples_indices]
-            returns_batch = returns[samples_indices]
-            old_log_probs_batch = old_log_probs[samples_indices]
+                predicted_actions, predicted_returns = model(states_batch)
+                new_log_probs = predicted_actions.log_prob(actions_batch)
+                ratios = (new_log_probs - old_log_probs_batch).exp()
 
-            predicted_actions, predicted_returns = model(states_batch)
-            new_log_probs = predicted_actions.log_prob(actions_batch)
-            ratios = (new_log_probs - old_log_probs_batch).exp()
+                loss_returns = nn.functional.smooth_l1_loss(predicted_returns, returns_batch)
+                clipped_ratios = torch.clamp(ratios, 1 - epsilon, 1 + epsilon)
+                advantages = returns_batch - predicted_returns.detach()
 
-            loss_returns = nn.functional.smooth_l1_loss(predicted_returns, returns_batch)
-            clipped_ratios = torch.clamp(ratios, 1 - epsilon, 1 + epsilon)
-            advantages = returns_batch - predicted_returns.detach()
+                advantages_log = advantages.detach().mean()
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                advantages = advantages.detach()
+                policy_loss = -torch.min(ratios * advantages, clipped_ratios * advantages).mean()
+                entropy_loss = -predicted_actions.entropy().mean()
+                total_loss = policy_loss + loss_returns * return_coefficient + entropy_loss * entropy_coefficient
 
-            advantages_log = advantages.detach().mean()
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-            advantages = advantages.detach()
-            policy_loss = -torch.min(ratios * advantages, clipped_ratios * advantages).mean()
-            entropy_loss = -predicted_actions.entropy().mean()
-            total_loss = policy_loss + loss_returns * return_coefficient + entropy_loss * entropy_coefficient
+                writer.add_scalar("total_loss", total_loss, epoch)
+                writer.add_scalar("policy_loss", policy_loss, epoch)
+                writer.add_scalar("entropy_loss", entropy_loss, epoch)
+                writer.add_scalar("advantages", advantages_log, epoch)
+                writer.add_scalar("returns_loss", loss_returns, epoch)
 
-            writer.add_scalar("total_loss", total_loss, epoch)
-            writer.add_scalar("policy_loss", policy_loss, epoch)
-            writer.add_scalar("entropy_loss", entropy_loss, epoch)
-            writer.add_scalar("advantages", advantages_log, epoch)
-            writer.add_scalar("returns_loss", loss_returns, epoch)
-
-            optimizer.zero_grad()
-            total_loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=20)
-            optimizer.step()
+                optimizer.zero_grad()
+                total_loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=20)
+                optimizer.step()
 
         if epoch % 10 == 0:
             target_path = os.path.join(writer.log_dir, "Checkpoints/Checkpoint.pt")

@@ -1,6 +1,7 @@
+import numpy as np
 import torch
 
-from main_ppo_my import SnakePPOWrapper, PPONetwork, PPOResidualNetwork, ResBlock, PPOResidualNetwork2
+from main_ppo_my import SnakePPOWrapper, PPONetwork, PPOResidualNetwork, ResBlock, PPOResidualNetwork2, PPOResidualNetwork3
 import cv2
 import torch
 
@@ -21,7 +22,7 @@ def index_to_string(step):
 def main():
     game = SnakeGame(16, 16)
     # loaded_model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/checkpoints_ppo_snake_my/checkpoint_2_0.pt").eval().requires_grad_(False)
-    loaded_model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_snake/run_85/Checkpoints/Checkpoint.pt").eval().requires_grad_(False)
+    loaded_model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_snake/run_117/Checkpoints/Checkpoint.pt").eval().requires_grad_(False)
     scores = []
     for i in range(100000):
         inputs_tensor = torch.from_numpy(game.field).float()[None].cuda()
@@ -31,7 +32,10 @@ def main():
 
 
 
-        image = render_snake_field(game.field, game.snake, 16, 2)
+        # image = render_snake_field(game.field, game.snake, 16, 2)
+        image = cv2.resize(game.field, [256, 256], interpolation=cv2.INTER_NEAREST).astype(np.float32)
+        image = image - image.min()
+        image = image / image.max()
         cv2.imshow("qwe", image)
         key_id = cv2.waitKey(50)
 
