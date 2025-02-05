@@ -382,9 +382,9 @@ class SnakePPOWrapper:
         self.n_steps += 1
 
         done = done or self.n_steps >= self.terminate_iters
-        if self.n_steps_without_food >= 200:
-            done = True
-            reward += self.dead_reward
+        # if self.n_steps_without_food >= 200:
+        #     done = True
+        #     reward += self.dead_reward
 
         if self.n_steps >= self.terminate_iters:
             print("PIZDAAAAAAAAAAAAAa")
