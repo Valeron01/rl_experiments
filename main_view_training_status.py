@@ -5,7 +5,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import torch
 
-checkpoint = torch.load("checkpoints_dqn_snake/checkpoint2_1.pt")
+checkpoint = torch.load("checkpoints_dqn_snake/checkpoint2_1____.pt")
 # print(checkpoint["epoch"])
 print(checkpoint["hyper_parameters"])
 print(checkpoint["model_parameters"])
@@ -16,6 +16,7 @@ max_value_per_game = checkpoint["max_value_per_game"]
 epsilon_history = checkpoint["epsilon_history"]
 
 rewards_per_game = gaussian_filter1d(rewards_per_game, 50)
+max_value_per_game = gaussian_filter1d(max_value_per_game, 10)
 
 plt.plot(rewards_per_game)
 plt.show()

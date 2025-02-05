@@ -22,7 +22,7 @@ def index_to_string(step):
 def main():
     game = SnakeGame(16, 16)
     # loaded_model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/checkpoints_ppo_snake_my/checkpoint_2_0.pt").eval().requires_grad_(False)
-    loaded_model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_snake/run_117/Checkpoints/Checkpoint.pt").eval().requires_grad_(False)
+    loaded_model = torch.load("/logs_ppo_snake/outdated/run_117/Checkpoints/Checkpoint.pt").eval().requires_grad_(False)
     scores = []
     for i in range(100000):
         inputs_tensor = torch.from_numpy(game.field).float()[None].cuda()

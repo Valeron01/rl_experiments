@@ -7,6 +7,7 @@ from tqdm import trange
 
 from game import Game2048, ActionResult
 from genetic_algorithm import Agent, GA2048Wrapper
+from main_dqn_my_snake import DQNResidualNetwork4
 from snake_game import SnakeGame
 
 
@@ -102,9 +103,9 @@ def main():
         "d_model": 128
     }
 
-    policy_net = QNetwork(**model_parameters).cuda()
+    policy_net = DQNResidualNetwork4().cuda()
     optimizer = torch.optim.AdamW(policy_net.parameters(), lr=lr, weight_decay=weight_decay, amsgrad=True)
-    target_net = QNetwork(**model_parameters).cuda()
+    target_net = DQNResidualNetwork4().cuda()
     target_net.load_state_dict(policy_net.state_dict())
     target_net.requires_grad_(False)
 
@@ -113,16 +114,16 @@ def main():
     epsilon_history = []
     fields_per_game = []
 
-    if True:
-        loaded_checkpoint = torch.load("checkpoints_dqn_snake/checkpoint2_0.pt")
-        optimizer.load_state_dict(loaded_checkpoint["optimizer"])
-        target_net.load_state_dict(loaded_checkpoint["target_net"])
-        policy_net.load_state_dict(loaded_checkpoint["policy_net"])
-        start_epoch = loaded_checkpoint["epoch"] + 1
-        max_value_per_game = loaded_checkpoint["max_value_per_game"]
-        rewards_per_game = loaded_checkpoint["rewards_per_game"]
-        epsilon_history = loaded_checkpoint["epsilon_history"]
-        fields_per_game = loaded_checkpoint["fields_per_game"]
+    # if True:
+    #     loaded_checkpoint = torch.load("checkpoints_dqn_snake/checkpoint2_0.pt")
+    #     optimizer.load_state_dict(loaded_checkpoint["optimizer"])
+    #     target_net.load_state_dict(loaded_checkpoint["target_net"])
+    #     policy_net.load_state_dict(loaded_checkpoint["policy_net"])
+    #     start_epoch = loaded_checkpoint["epoch"] + 1
+    #     max_value_per_game = loaded_checkpoint["max_value_per_game"]
+    #     rewards_per_game = loaded_checkpoint["rewards_per_game"]
+    #     epsilon_history = loaded_checkpoint["epsilon_history"]
+    #     fields_per_game = loaded_checkpoint["fields_per_game"]
 
     for epoch in range(start_epoch, num_epochs):
         epsilon = max(
@@ -227,7 +228,7 @@ def main():
                 "epsilon_history": epsilon_history,
                 "rewards_per_game": rewards_per_game,
                 "fields_per_game": fields_per_game
-            }, "checkpoints_dqn_snake/checkpoint2_1.pt")
+            }, "checkpoints_dqn_snake/checkpoint3_1____.pt")
 
 
 if __name__ == '__main__':
