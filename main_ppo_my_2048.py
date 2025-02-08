@@ -90,6 +90,37 @@ class PPOResidualNetwork4(nn.Module):
         return actor_distributions, values
 
 
+
+class PPOTransformerNetwork(nn.Module):
+    def __init__(self, field_size=4, d_model=128, n_heads=2, n_layers=5, dim_feedforward=512):
+        super().__init__()
+
+        self.input_projection = nn.Linear(1, d_model)
+        self.position_encoding = nn.Parameter(torch.randn(1, field_size ** 2 + 2, d_model))
+        self.transformer = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(d_model, n_heads, dim_feedforward, batch_first=True), num_layers=n_layers
+        )
+        self.last_actor = nn.Linear(d_model, 4)
+        self.last_value = nn.Linear(d_model, 1)
+
+    def forward(self, x):
+        assert x.ndim == 3
+        inputs = x.flatten(1)[:, :, None]
+        inputs[inputs == 0] = 1
+        inputs = torch.log2(inputs)
+        inputs = inputs / 7
+
+        inputs = inputs * 2 - 1
+
+        projected = self.input_projection(inputs)
+        projected = torch.nn.functional.pad(projected, [0, 0, 0, 2])
+        pe = self.position_encoding + projected
+        tr = self.transformer(pe)
+        last_actor = self.last_actor(tr[:, -2])
+        last_value = self.last_value(tr[:, -1]).squeeze(-1)
+        return torch.distributions.Categorical(logits=last_actor), last_value
+
+
 class Game2048PPOWrapper:
     def __init__(self, field_size=4, four_prob=0.1):
         self.game = Game2048(field_size, four_prob)
@@ -150,15 +181,17 @@ def main():
     writer = tb_utils.build_logger(
         "./logs_ppo_2048"
     )
-    model = PPOResidualNetwork4().cuda()
+    # model = PPOTransformerNetwork(d_model=256, n_layers=7, n_heads=4).cuda()
+    model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_2048/run_28/Checkpoints/Checkpoint.pt")
+
     n_iterations = 10000000
     batch_size = 128
-    lr = 2.5e-4
+    lr = 3e-5
     n_epochs = 8 # Try a Different epoch count
-    gamma = 0.7
+    gamma = 0.95
     num_actions_to_collect = 4096
     epsilon = 0.2
-    entropy_coefficient = 0.01
+    entropy_coefficient = 0.0001
     return_coefficient = 0.5
 
     env_params = {
@@ -179,9 +212,13 @@ def main():
     hparam_dict.update(env_params)
     writer.add_hparams(hparam_dict, metric_dict={"default_hp": -1})
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-6)
     n_episodes = 0
-    for epoch in range(n_iterations):
+    for epoch in range(3350, n_iterations):
+        if epoch == 3370:
+            print("Changing LR")
+            for g in optimizer.param_groups:
+                g['lr'] = lr
         env = Game2048PPOWrapper()
 
         states = []
@@ -262,7 +299,7 @@ def main():
 
             optimizer.zero_grad()
             total_loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=20)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2)
             optimizer.step()
 
         if epoch % 10 == 0:
