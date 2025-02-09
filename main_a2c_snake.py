@@ -79,7 +79,7 @@ class SnakeA2CWrapper:
 
         done = done or self.n_steps >= 10000
         if self.n_steps >= 10_000:
-            print("PIZDAAAAAAAAAAAAAa")
+            print("Terminate")
             assert False
 
         return reward, done

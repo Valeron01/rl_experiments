@@ -387,7 +387,7 @@ class SnakePPOWrapper:
         #     reward += self.dead_reward
 
         if self.n_steps >= self.terminate_iters:
-            print("PIZDAAAAAAAAAAAAAa")
+            print("Terminate")
         reward = reward / 5
         return reward, done
 

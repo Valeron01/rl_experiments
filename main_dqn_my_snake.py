@@ -189,7 +189,7 @@ class SnakePPOWrapper:
 
         done = done or self.n_steps >= self.terminate_iters
         if self.n_steps >= self.terminate_iters:
-            print("PIZDAAAAAAAAAAAAAa")
+            print("Terminate")
         return reward, done
 
 
