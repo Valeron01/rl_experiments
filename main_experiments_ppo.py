@@ -1,12 +1,12 @@
 import numpy as np
 import torch
 
-from main_ppo_my import SnakePPOWrapper, PPONetwork, PPOResidualNetwork, ResBlock, PPOResidualNetwork2, PPOResidualNetwork3
+from main_ppo_snake import SnakePPOWrapper, PPOResidualNetwork4, ResBlock
 import cv2
 import torch
 
 from main_q_learning_snake import QNetwork
-from snake_game import SnakeGame, render_snake_field
+from snake_game import SnakeGame
 
 
 def index_to_string(step):
@@ -19,10 +19,11 @@ def index_to_string(step):
     if step == 1:
         return "ri"
 
+
 def main():
     game = SnakeGame(16, 16)
     # loaded_model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/checkpoints_ppo_snake_my/checkpoint_2_0.pt").eval().requires_grad_(False)
-    loaded_model = torch.load("/logs_ppo_snake/outdated/run_117/Checkpoints/Checkpoint.pt").eval().requires_grad_(False)
+    loaded_model = torch.load("logs_ppo_snake/run_217/Checkpoints/Checkpoint.pt").eval().requires_grad_(False)
     scores = []
     for i in range(100000):
         inputs_tensor = torch.from_numpy(game.field).float()[None].cuda()

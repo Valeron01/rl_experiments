@@ -2,12 +2,7 @@ import random
 
 import torch
 from torch import nn
-import numpy as np
-from tqdm import trange
 
-from game import Game2048, ActionResult
-from genetic_algorithm import Agent, GA2048Wrapper
-from main_dqn_my_snake import DQNResidualNetwork4
 from snake_game import SnakeGame
 
 
@@ -103,9 +98,9 @@ def main():
         "d_model": 128
     }
 
-    policy_net = DQNResidualNetwork4().cuda()
+    policy_net = QNetwork().cuda()
     optimizer = torch.optim.AdamW(policy_net.parameters(), lr=lr, weight_decay=weight_decay, amsgrad=True)
-    target_net = DQNResidualNetwork4().cuda()
+    target_net = QNetwork().cuda()
     target_net.load_state_dict(policy_net.state_dict())
     target_net.requires_grad_(False)
 

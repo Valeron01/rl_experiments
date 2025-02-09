@@ -1,5 +1,4 @@
 import cv2
-import numpy as np
 import torch
 
 from main_q_learning_snake import QNetwork

@@ -4,11 +4,9 @@ import random
 import numpy as np
 from torch import nn
 import torch
-from torch.utils.tensorboard import SummaryWriter
 
 import tb_utils
 from game import ActionResult, Game2048
-from snake_game import SnakeGame
 
 
 def compute_returns(rewards, gamma, dones):

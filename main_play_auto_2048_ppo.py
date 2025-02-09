@@ -1,17 +1,10 @@
 import cv2
-import torch
 import random
 
 import torch
-from torch import nn
-import numpy as np
-from tqdm import trange
 
-from game import Game2048, ActionResult
-from genetic_algorithm import Agent, GA2048Wrapper
-from main_q_learning import QNetwork, Game2048QWrapper
 from game import render_field
-from main_ppo_my_2048 import PPOTransformerNetwork, Game2048PPOWrapper
+from main_ppo_2048 import Game2048PPOWrapper, PPOTransformerNetwork
 
 model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_2048/run_28/Checkpoints/Checkpoint.pt")
 model = model.eval().requires_grad_(False)

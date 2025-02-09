@@ -1,12 +1,10 @@
 import numpy as np
 import torch
 
-from main_ppo_my import SnakePPOWrapper, PPONetwork, PPOResidualNetwork, ResBlock, PPOResidualNetwork2, PPOResidualNetwork3
+from main_ppo_snake import SnakePPOWrapper, PPOResidualNetwork4
 import cv2
 import torch
-
-from main_q_learning_snake import QNetwork
-from snake_game import SnakeGame, render_snake_field
+from snake_game import SnakeGame
 
 
 def index_to_string(step):

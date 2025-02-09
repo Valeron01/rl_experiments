@@ -1,14 +1,5 @@
 import cv2
 import torch
-import random
-
-import torch
-from torch import nn
-import numpy as np
-from tqdm import trange
-
-from game import Game2048, ActionResult
-from genetic_algorithm import Agent, GA2048Wrapper
 from main_q_learning import QNetwork, Game2048QWrapper
 from game import render_field
 

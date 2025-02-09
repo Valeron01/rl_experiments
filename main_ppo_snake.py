@@ -4,7 +4,6 @@ import random
 import numpy as np
 from torch import nn
 import torch
-from torch.utils.tensorboard import SummaryWriter
 
 import tb_utils
 from snake_game import SnakeGame
@@ -21,44 +20,6 @@ def compute_returns(rewards, gamma, dones):
     return result
 
 
-class PPONetwork(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, 3, 1, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Conv2d(32, 64, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Conv2d(64, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Conv2d(96, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-            nn.Flatten(1),
-            nn.Linear(384, 384),
-            nn.LeakyReLU(inplace=True)
-        )
-
-        self.actor_head = nn.Linear(384, 4)
-        self.value_head = nn.Linear(384, 1)
-
-    def forward(self, x):
-        assert x.ndim == 3
-        x = x[:, None].float()
-        # x = x / 3
-        #
-        # x[x==0] = -0.5
-
-        features = self.conv(x)
-
-        actor_distributions = torch.distributions.Categorical(probs=self.actor_head(features).softmax(-1))
-        values = self.value_head(features).squeeze(1)
-        return actor_distributions, values
-
-
 class ResBlock(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
@@ -72,155 +33,6 @@ class ResBlock(nn.Module):
         block = self.act1(block)
 
         return x + block
-
-
-class PPOResidualNetwork(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, 3, 1, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(32),
-            nn.Conv2d(32, 64, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(64),
-            nn.Conv2d(64, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(96),
-
-            nn.Conv2d(96, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Flatten(1),
-            nn.Linear(384, 384),
-            nn.LeakyReLU(inplace=True)
-        )
-
-        self.actor_head = nn.Linear(384, 4)
-        self.value_head = nn.Linear(384, 1)
-
-    def forward(self, x):
-        assert x.ndim == 3
-        x = x[:, None].float()
-        # x = x / 3
-        #
-        # x[x==0] = -0.2
-
-        features = self.conv(x)
-
-        actor_distributions = torch.distributions.Categorical(logits=self.actor_head(features))
-        values = self.value_head(features).squeeze(1)
-        return actor_distributions, values
-
-
-class PPOResidualNetwork2(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, 3, 1, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            nn.Conv2d(32, 64, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(64),
-            ResBlock(64),
-            nn.Conv2d(64, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(96),
-            ResBlock(96),
-
-            nn.Conv2d(96, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Flatten(1),
-            nn.Linear(384, 384),
-            nn.LeakyReLU(inplace=True)
-        )
-
-        self.actor_head = nn.Linear(384, 4)
-        self.value_head = nn.Linear(384, 1)
-
-    def forward(self, x):
-        assert x.ndim == 3
-        x = x[:, None].float()
-        # x = x / 3
-        #
-        # x[x==0] = -0.2
-
-        features = self.conv(x)
-
-        actor_distributions = torch.distributions.Categorical(logits=self.actor_head(features))
-        values = self.value_head(features).squeeze(1)
-        return actor_distributions, values
-
-
-class PPOResidualNetwork3(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, 3, 1, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            nn.Conv2d(32, 64, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(64),
-            ResBlock(64),
-            ResBlock(64),
-            nn.Conv2d(64, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(96),
-            ResBlock(96),
-        )
-
-        self.actor_head = nn.Sequential(
-            ResBlock(96),
-
-            nn.Conv2d(96, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Flatten(1),
-            nn.Linear(384, 384),
-            nn.LeakyReLU(inplace=True),
-            nn.Linear(384, 4),
-        )
-        self.value_head = nn.Sequential(
-            ResBlock(96),
-
-            nn.Conv2d(96, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Flatten(1),
-            nn.Linear(384, 384),
-            nn.LeakyReLU(inplace=True),
-            nn.Linear(384, 1),
-        )
-
-    def forward(self, x):
-        assert x.ndim == 3
-        x = x[:, None].float()
-
-        features = self.conv(x)
-
-        actor_distributions = torch.distributions.Categorical(logits=self.actor_head(features))
-        values = self.value_head(features).squeeze(1)
-        return actor_distributions, values
 
 
 class PPOResidualNetwork4(nn.Module):
@@ -278,54 +90,6 @@ class PPOResidualNetwork4(nn.Module):
 
         actor_distributions = torch.distributions.Categorical(logits=self.actor_head(features))
         values = self.value_head(features).squeeze(1)
-        return actor_distributions, values
-
-
-class PPOBaseModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        d_model = 128
-        self.critic = nn.Sequential(
-            nn.Conv2d(1, 32, 3, 1, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Conv2d(32, 64, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Conv2d(64, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Conv2d(96, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-            nn.Flatten(1),
-            nn.Linear(384, d_model),
-            nn.LeakyReLU(inplace=True),
-            nn.Linear(d_model, 1)
-        )
-        self.actor = nn.Sequential(
-            nn.Conv2d(1, 32, 3, 1, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Conv2d(32, 64, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Conv2d(64, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Conv2d(96, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-            nn.Flatten(1),
-            nn.Linear(384, d_model),
-            nn.LeakyReLU(inplace=True),
-            nn.Linear(d_model, 4)
-        )
-
-    def forward(self, x):
-        assert x.ndim == 3
-        x = x[:, None].float()
-
-        actor_distributions = torch.distributions.Categorical(logits=self.actor(x))
-        values = self.critic(x).squeeze(1)
         return actor_distributions, values
 
 

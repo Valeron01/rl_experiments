@@ -21,8 +21,6 @@ def compute_returns(rewards, gamma, dones):
     return result
 
 
-
-
 class ResBlock(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
@@ -36,68 +34,6 @@ class ResBlock(nn.Module):
         block = self.act1(block)
 
         return x + block
-
-
-class DQNResidualNetwork4(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.conv = nn.Sequential(
-            nn.Conv2d(3, 32, 3, 1, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            nn.Conv2d(32, 64, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(64),
-            ResBlock(64),
-            ResBlock(64),
-            nn.Conv2d(64, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(96),
-            ResBlock(96),
-        )
-
-        self.position_encoding = nn.Parameter(
-            torch.randn(1, 2, 16, 16)
-        )
-        nn.init.normal_(self.position_encoding, mean=0, std=0.05)
-
-        self.value_head = nn.Sequential(
-            ResBlock(96),
-
-            nn.Conv2d(96, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-
-            nn.Flatten(1),
-            nn.Linear(384, 384),
-            nn.LeakyReLU(inplace=True),
-            nn.Linear(384, 4),
-        )
-
-    def forward(self, x):
-        assert x.ndim == 3
-        x = x[:, None].float()
-
-        x = torch.cat([x, self.position_encoding.tile(x.shape[0], 1, 1, 1)], dim=1)
-
-        features = self.conv(x)
-
-        values = self.value_head(features).squeeze(1)
-        return values
-
-    def forward_epsilon_greedy(self, state, epsilon):
-        assert state.shape[0] == 1
-        if random.random() < epsilon:
-            return random.randrange(0, 4)
-
-        with torch.inference_mode():
-            return self(state).argmax().item()
-
 
 
 class QNetwork(nn.Module):
