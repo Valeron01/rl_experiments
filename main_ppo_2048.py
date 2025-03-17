@@ -186,7 +186,7 @@ def main():
     batch_size = 128
     lr = 3e-5
     n_epochs = 8 # Try a Different epoch count
-    gamma = 0.95
+    gamma = 0.8
     num_actions_to_collect = 4096
     epsilon = 0.2
     entropy_coefficient = 0.0001
@@ -212,8 +212,8 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-6)
     n_episodes = 0
-    for epoch in range(3350, n_iterations):
-        if epoch == 3370:
+    for epoch in range(4500, n_iterations):
+        if epoch == 4515:
             print("Changing LR")
             for g in optimizer.param_groups:
                 g['lr'] = lr

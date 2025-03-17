@@ -6,7 +6,8 @@ import torch
 from game import render_field
 from main_ppo_2048 import Game2048PPOWrapper, PPOTransformerNetwork
 
-model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_2048/run_28/Checkpoints/Checkpoint.pt")
+# 32 28 35
+model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_2048/run_35/Checkpoints/CheckpointBackup.pt")
 model = model.eval().requires_grad_(False)
 # policy_net = QNetwork(1).cuda()
 
