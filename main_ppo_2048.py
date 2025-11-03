@@ -9,84 +9,18 @@ import tb_utils
 from game import ActionResult, Game2048
 
 
-def compute_returns(rewards, gamma, dones):
+def compute_returns(rewards, gamma, dones, is_blocked):
     result = np.zeros(len(rewards))
     cumulative_sum = 0
     for i in reversed(range(len(rewards))):
         if dones[i]:
             cumulative_sum = 0
-        cumulative_sum = cumulative_sum * gamma + rewards[i]
-        result[i] = cumulative_sum
+        if not is_blocked[i]:
+            cumulative_sum = cumulative_sum * gamma + rewards[i]
+            result[i] = cumulative_sum
+        else:
+            result[i] = rewards[i]
     return result
-
-
-class ResBlock(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-        self.conv1 = nn.Conv2d(in_channels, in_channels, 3, 1, 1)
-        self.bn1 = nn.BatchNorm2d(in_channels)
-        self.act1 = nn.LeakyReLU(inplace=True)
-
-    def forward(self, x):
-        block = self.conv1(x)
-        block = self.bn1(block)
-        block = self.act1(block)
-
-        return x + block
-
-
-class PPOResidualNetwork4(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 96, 3, 1, 1),
-            nn.LeakyReLU(inplace=True),
-
-            ResBlock(96),
-            ResBlock(96),
-            ResBlock(96),
-            ResBlock(96),
-            ResBlock(96),
-            ResBlock(96),
-            ResBlock(96),
-            ResBlock(96),
-            ResBlock(96),
-        )
-
-        self.actor_head = nn.Sequential(
-            ResBlock(96),
-
-            nn.Conv2d(96, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-            ResBlock(96),
-            nn.Flatten(1),
-            nn.Linear(384, 384),
-            nn.LeakyReLU(inplace=True),
-            nn.Linear(384, 4),
-        )
-        self.value_head = nn.Sequential(
-            ResBlock(96),
-
-            nn.Conv2d(96, 96, 3, 2, 1),
-            nn.LeakyReLU(inplace=True),
-            ResBlock(96),
-            nn.Flatten(1),
-            nn.Linear(384, 384),
-            nn.LeakyReLU(inplace=True),
-            nn.Linear(384, 1),
-        )
-
-    def forward(self, x):
-        assert x.ndim == 3
-        x = x[:, None].float()
-
-        features = self.conv(x)
-
-        actor_distributions = torch.distributions.Categorical(logits=self.actor_head(features))
-        values = self.value_head(features).squeeze(1)
-        return actor_distributions, values
-
 
 
 class PPOTransformerNetwork(nn.Module):
@@ -125,6 +59,7 @@ class Game2048PPOWrapper:
         self.n_bad_steps = 0
         self.n_steps = 0
         self.score = 0
+        self.previous_max_block = np.log2(self.game.field).max()
 
     def make_step(self, step_index):
         self.n_steps += 1
@@ -140,34 +75,40 @@ class Game2048PPOWrapper:
         else:
             raise NotImplementedError()
         merged_values = np.log2(merged_values)
-        reward = 0
+        reward_merged = 0
         for i in merged_values:
             if i < 8:
-                reward += i
+                reward_merged += i
             else:
-                reward += i * i
+                reward_merged += i * i
 
+        reward_step = 0
         done = False
         if step_result == ActionResult.ACTION_PERFORMED:
-            reward += 0
+            reward_step += 0
         elif step_result == ActionResult.ACTION_BLOCKED:
-            reward += -10
+            reward_step += -1
             self.n_bad_steps += 1
         else:
             done = True
-            reward += -100
+            reward_step += -2
 
-        reward /= 20
+        new_max_log = 0 if merged_values.shape[0] == 0 else merged_values.max()
+        reward_progress = 0
+        if new_max_log > self.previous_max_block:
+            self.previous_max_block = new_max_log
+            reward_progress = new_max_log
 
         done = done or self.n_bad_steps == 5
 
+        reward = reward_step + reward_progress + reward_merged / 10
+
         self.score = np.sum(self.game.field)
-        return reward, done
+        return reward, done, step_result == ActionResult.ACTION_BLOCKED
 
     @property
     def max_value(self):
         return np.max(self.game.field)
-
 
 
 def main():
@@ -179,17 +120,17 @@ def main():
     writer = tb_utils.build_logger(
         "./logs_ppo_2048"
     )
-    # model = PPOTransformerNetwork(d_model=256, n_layers=7, n_heads=4).cuda()
-    model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_2048/run_28/Checkpoints/Checkpoint.pt")
+    # model = PPOTransformerNetwork(d_model=288, n_layers=7, n_heads=12).cuda()
+    model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_2048/run_14/Checkpoints/Checkpoint.pt")
 
     n_iterations = 10000000
-    batch_size = 128
-    lr = 3e-5
-    n_epochs = 8 # Try a Different epoch count
+    batch_size = 384
+    lr = 1e-5
+    n_epochs = 2 # Try a Different epoch count
     gamma = 0.8
-    num_actions_to_collect = 4096
-    epsilon = 0.2
-    entropy_coefficient = 0.0001
+    num_actions_to_collect = 8192
+    epsilon = 0.1
+    entropy_coefficient = 0.000001
     return_coefficient = 0.5
 
     env_params = {
@@ -210,13 +151,9 @@ def main():
     hparam_dict.update(env_params)
     writer.add_hparams(hparam_dict, metric_dict={"default_hp": -1})
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-6)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     n_episodes = 0
-    for epoch in range(4500, n_iterations):
-        if epoch == 4515:
-            print("Changing LR")
-            for g in optimizer.param_groups:
-                g['lr'] = lr
+    for epoch in range(0, n_iterations):
         env = Game2048PPOWrapper()
 
         states = []
@@ -228,6 +165,7 @@ def main():
         game_scores = []
         num_steps = []
         game_max_scores = []
+        blockeds = []
         model = model.eval()
         game_iter = 0
         while True:
@@ -240,10 +178,11 @@ def main():
             states.append(state_tensor)
             actions.append(action_sample)
 
-            reward, done = env.make_step(action_sample.item())
+            reward, done, blocked = env.make_step(action_sample.item())
             rewards.append(reward)
             dones.append(done)
             values.append(value)
+            blockeds.append(blocked)
 
             if done:
                 print(epoch, n_episodes, env.score, env.n_steps, env.max_value)
@@ -257,11 +196,12 @@ def main():
             if game_iter >= num_actions_to_collect and done:
                 break
 
-        returns = compute_returns(rewards, gamma, dones)
+        returns = compute_returns(rewards, gamma, dones, blockeds)
 
         states = torch.cat(states, 0)
         actions = torch.cat(actions, 0)
         returns = torch.from_numpy(returns).cuda().float()
+        blockeds = torch.FloatTensor(blockeds).float().cuda()
 
         old_log_probs = torch.cat(old_log_probs, 0)
         model = model.train()
@@ -273,14 +213,15 @@ def main():
             actions_batch = actions[samples_indices]
             returns_batch = returns[samples_indices]
             old_log_probs_batch = old_log_probs[samples_indices]
+            blockeds_batch = blockeds[samples_indices][:, None]
 
             predicted_actions, predicted_returns = model(states_batch)
             new_log_probs = predicted_actions.log_prob(actions_batch)
             ratios = (new_log_probs - old_log_probs_batch).exp()
 
-            loss_returns = nn.functional.l1_loss(predicted_returns, returns_batch)
+            loss_returns = nn.functional.l1_loss(predicted_returns * (1 - blockeds_batch), returns_batch * (1 - blockeds_batch))
             clipped_ratios = torch.clamp(ratios, 1 - epsilon, 1 + epsilon)
-            advantages = returns_batch - predicted_returns.detach()
+            advantages = returns_batch - predicted_returns.detach() * (1 - blockeds_batch)
 
             advantages_log = advantages.detach().mean()
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)

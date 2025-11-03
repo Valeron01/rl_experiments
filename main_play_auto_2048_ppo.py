@@ -7,7 +7,7 @@ from game import render_field
 from main_ppo_2048 import Game2048PPOWrapper, PPOTransformerNetwork
 
 # 32 28 35
-model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_2048/run_35/Checkpoints/CheckpointBackup.pt")
+model = torch.load("/home/valera/PycharmProjects/TwentyFourtyEight/logs_ppo_2048/run_14/Checkpoints/Checkpoint.pt")
 model = model.eval().requires_grad_(False)
 # policy_net = QNetwork(1).cuda()
 
@@ -21,11 +21,11 @@ for i in range(20005):
     actor, value = model(inputs_tensor)
     probs = actor.probs.cpu()[0]
     step = probs.argmax().item()
-    reward, done = game.make_step(step)
-    if reward == -0.5:
+    reward, done, blocked = game.make_step(step)
+    if blocked:
         step = random.randrange(0, 4)
-        reward, done = game.make_step(step)
+        reward, done, _ = game.make_step(step)
     print(reward, probs, step, value.item())
     cv2.imshow("2048", rendered_image[..., ::-1])
-    cv2.waitKey(1)
+    cv2.waitKey(0)
 
