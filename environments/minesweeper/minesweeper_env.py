@@ -39,7 +39,7 @@ class MinesweeperEnv:
         self.n_steps += 1
         reward = self.opened_reward + self.score() * self.score_multiplier
 
-        if old_opened[y-2:y+2, x-2:x+2].sum() == 0:
+        if old_opened[y-2:y+3, x-2:x+3].sum() == 0:
             reward = 0
 
         return reward, False
