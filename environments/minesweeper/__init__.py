@@ -19,6 +19,7 @@ NUM_COLORS = {
 }
 # ------------------------------------------------------------------
 
+
 def draw_minesweeper(field: np.ndarray,
                      opened: np.ndarray,
                      cell_size: int = 40,
@@ -237,14 +238,13 @@ def click(field: np.ndarray,
 
 
 def main():
-    field, opened = create_minesweeper_field(16, 16, 40)
+    field, opened = create_minesweeper_field(16, 32, 100)
     for i in range(10000):
-        opened, lost = click(field, opened, random.randrange(0, 16), random.randrange(0, 16))
+        opened, lost = click(field, opened, 10, 10)
         img = draw_minesweeper(field, opened, cell_size=25)
 
         if lost:
-            continue
-            field, opened = create_minesweeper_field(32, 32, 32 * 32 * 20 // 100)
+            field, opened = create_minesweeper_field(16, 32, 100)
 
         cv2.imshow("Minesweeper", img)
         cv2.waitKey(1)

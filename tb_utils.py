@@ -23,7 +23,7 @@ def get_next_run_dir(log_dir):
     ]
     next_run = max(run_numbers) + 1 if run_numbers else 0
 
-    return os.path.join(log_dir, f"run_{next_run}")
+    return os.path.join(log_dir, f"run_{next_run:03d}")
 
 
 def build_logger(base_folder_path, *args, **kwargs):
